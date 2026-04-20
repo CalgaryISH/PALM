@@ -1,0 +1,39 @@
+# data/properties/FSM.yml
+- name: always_legal_state
+  description: >
+    After reset, on every clock edge, the FSM state must be one of the declared legal encodings
+    and contain no X/Z bits.
+  extra: |
+    • Extract the state typedef/enum and use the literal symbols in an 'inside {…}' test.
+    • Also put the definition of typedef/enum within the generated response you return.
+    • If reset is active-low, invert it in disable iff.
+    • also add a line in your generated response and put the states in that line like states = {state1, state2, ...}. replace the correct states instead of state_1, state_2, and ... .
+    
+  example_sva: |
+    typedef enum logic [1:0] { IDLE=2'b00, LOAD=2'b01, EXEC=2'b10 } state_t;
+    property always_legal_state;
+      @(posedge clk) disable iff (rst)
+        (state inside {IDLE, LOAD, EXEC}) && !$isunknown(state);
+    endproperty
+    _assert_1: assert property (always_legal_state);
+
+
+- name: recovery_from_illegal_state
+  description: >
+    If, after reset, an illegal or X/Z state is ever observed, next_state must choose SAFE (e.g., IDLE)
+    in the same cycle and the registered state must be SAFE on the next clock.
+  extra: |
+    • Extract the state typedef/enum and use the literal symbols in an 'inside {…}' test.
+    • Also put the definition of typedef/enum within the generated response you return.
+    • also add a line in your generated response and put the states in that line like states = {state1, state2, ...}. replace the correct states instead of state_1, state_2, and ... .
+    • Derive SAFE from design (commonly IDLE). If next_state is absent, infer the combinational driver.
+    • Use 'inside {…}' and isunknown() for detection; then 'next_state==SAFE ##1 state==SAFE'.
+    • If reset is active-low, invert it in disable iff.
+  example_sva: |
+    property recovery_from_illegal_state;
+      @(posedge clk) disable iff (rst)
+        ( !(state inside {IDLE, LOAD, EXEC}) || $isunknown(state) )
+        |-> (next_state == IDLE) ##1 (state == IDLE);
+    endproperty
+    _assert_1: assert property (recovery_from_illegal_state);
+

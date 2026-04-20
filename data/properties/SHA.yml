@@ -1,0 +1,15 @@
+# data/properties/SHA.yml
+- name: Outputs_Diff
+  description: >
+    If two consecutive accepted input messages differ, the produced output text (message) must differ. 
+  extra: |
+    Use the following example template, Try to follow antecedent and consequent format, but only find the corresponding variables/signals within the given design.
+  example_sva: |
+    // Placeholders: replace the signals in the following example with actual signals in the given design. For example recognize which the signal in the given design is for reading the command and replce it with the following place holder (read_command_bit).
+    logic [W-1:0] text_out; // text output W bit
+    logic read_command_bit;
+    property sha_outputs_diff;
+      @(posedge clk) disable iff (rst)
+         ##[1:$] (text_out != $past(text_out,1));
+    endproperty
+    _assert_1: assert property (sha_outputs_diff);

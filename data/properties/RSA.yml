@@ -1,0 +1,18 @@
+# data/properties/RSA.yml
+- name: RSA_In_Out_Diff
+  description: >
+    The output cipher must differ from the input message on the same cycle that the RSA
+    start rises.
+  extra: |
+    • Treat 'start' as the transaction kickoff; if DUT uses a different name (ds, go, valid_i), map it.
+    • If the DUT is multi-cycle, you still assert the non-identity at start edge (no combinational passthrough).
+    • Prefer posedge clock if present; disable during reset (active-high or active-low).
+    • If widths differ (e.g., message wider than output), assert with aligned slices the design actually drives.
+    • For the antecedent part, use only "$rose(start)", just replace "start" with the appropriate variable/signal. Avoid adding any other conditions.
+    • For the consequent part, add "##[1:$]" before checking the equivalence of "cipher_out" and "message". Remember to use the signals/variables within the design, not the variables in this example or any new variable name.
+  example_sva: |
+    property RSA_In_Out_Diff;
+      @(posedge clk) disable iff (rst)
+        ##[1:$] (cipher_out != message);
+    endproperty
+    _assert_1: assert property (RSA_In_Out_Diff);

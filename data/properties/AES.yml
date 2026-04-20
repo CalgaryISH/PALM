@@ -1,0 +1,165 @@
+- name: AddRoundKey
+  description: >
+    AddRoundKey: The subkey is applied by performing a bitwise XOR operation between each byte of the state and its corresponding byte in the subkey. In the AddRoundKey operation in AES, we should XOR the input state with the round key to generate the output state.  
+  extra: |
+    • Scan the code and look for these variables: clock and reset signals, which might have different shape (e.g. clk, rst, and ...)
+    • If we have a variable for the clock; keep it for this line of SVA: "@(posedge clock)" . You must replace the clock in this line with the declared clock variable within the provided file (look at the variable list in the table plus the code).
+    • If we have a control variable for the enable (e.g., en, enable, ready, iEncKeyRoundReady, and ...); keep it for " Before |-> " (Antecedent) of SVA: (enable) |-> (the rest)  You must replace the enable in this line with the declared enable variable within the provided file (look at the variable list in the table plus the code).
+    • For AddRoundKey operation in AES design you should note: In the AddRoundKey operation in AES, we should XOR the input state with the round key to generate the output state.
+    • For AddRoundKey SVA, we should check this (output state == input state ^ round key) in the final SVA.
+    • Thus, you need to recognize three relevant variables within the code/table and replace them with output state, input state, and round key.
+    • Do not use |-> operator; do not use Antecedent part and consequent part. We only need to check output state == input state ^ round key
+    • If we have an input state declaration similar to this: "input logic [7:0] plain_text_i [NO_ROWS-1:0][NO_COLS-1:0]", for using it in the SVA, define two integer variables (int i,j;) and use it like this: "plain_text_i[i][j]" in the SVA body.
+    • If the module that implements the AddroundKey function hasn't used clock and reset signals. You also don't use them and in the tcl file for clock write -none and also for reset type -none
+    • Do not add extra statements.
+    • Remember each time if you need to make a wrapper to add the propertyand assert at the end of the file before endmodule.
+
+  example_sva: |
+    property PR_addRK; 
+    (data_out == data_in ^ Key_exp); 
+    endproperty 
+
+  ASR_ARK: assert property (PR_addRK);
+
+- name: KeyExpansion
+  description: >
+    KeyExpansion: The round constant for each round in the key expansion process must be accurately applied. For KeyExpansion operation in AES design you should note:  In Key Expansion operation in AES, each word in the new round key is generated through a series of transformations and XOR operations with components of the previous round key. Thus, to generate each 32-bit part of the current key, it is XORed sequentially with the corresponding segment of the previous key. Thus, for key expansion consider Word-by-Word XORing.  
+  extra: |
+    • For KeyExpansion operation in AES design you should note:  In Key Expansion oeration in AES, each word in the new round key is generated through a series of transformations and XOR operations with components of the previous round key.
+             Thus, to generate each 32-bit part of the current key, it is XORed sequentially with the corresponding segment of the previous key.
+             Thus, for key expansion consider Word-by-Word XORing.
+             If a we need a defined task in the original design for the SVA, replace that task with a direct mapping within the defined property.
+   
+  example_sva: |
+    property keygen_word_rnd_out_generation;
+    @(posedge clk) disable iff (!nrst)
+      en |=> (
+        word_out[0] == (word_rnd[0] ^ xor_result) &&
+        word_out[1] == (word_rnd[1] ^ word_out[0]) &&
+        word_out[2] == (word_rnd[2] ^ word_out[1]) &&
+        word_out[3] == (word_rnd[3] ^ word_out[2])
+      );
+    endproperty
+    assert property (keygen_word_rnd_out_generation);
+    property word_by_word_xor;
+    @(posedge clk)
+    disable iff (kill) 
+    (key_ready) |-> (
+        key_round[31:0] == (ram[addr][63:32] ^ ram[addr][31:0]) &&
+        key_round[63:32] == (ram[addr][95:64] ^ ram[addr][63:32]) &&
+        key_round[95:64] == (ram[addr][127:96] ^ ram[addr][95:64]) &&
+        key_round[127:96] == (ram[addr][127:96] ^ {rcon_o, 24'h0})
+    );
+    endproperty
+    assert property (word_by_word_xor);
+
+- name: SBox
+  description: >
+    SBox: The (Substitution-Box) S-box must prevent the occurrence of fixed points and opposite fixed points. For writing SVA for S-Box, we should check two conditions: (output of S-Box != input of S-Box) && !(output of S-Box == ~(input of S-Box)); First part (output of S-Box != input of S-Box) means that the code needs to avoid Fixed Points. In other words output of S-Box should differ from the input of S-Box. Second part !(output of S-Box == ~(input of S-Box)) means that code needs to avoid Opposite Fixed Points. In other words, it checks that the input and output are not bitwise complements.
+  extra: |
+    • For Substitution Box operation in AES design you should note:  
+            In the S-Box operation in AES, the input and output of the S-box are 8 bits.  
+            For writing SVA for S-Box, we should check two conditions: (output of S-Box != input of S-Box) && !(output of S-Box == ~(input of S-Box)) 
+    • if we have the definition for input and output:
+            input [0:3][7:0] in  [0:3];
+            output [0:3][7:0] out [0:3];
+            and we need to generate a domain between 0 to 3, we can use the following structure:
+
+            If we need to use matrices in properties, consider the following example and use the similar method to make the SVA,
+            but for the relevant variables in a given design.
+            For example, if we define input and output of s-box operation as two 4x4 matrices with 8-bit elements, like this:
+            input [0:3][7:0] in  [0:3];
+            output [0:3][7:0] out [0:3];
+            we can generate assertions across all elements of two 4x4 matrices by iterating over a domain from 0 to 3.
+            The following template (structure) demonstrates the implementation:
+            generate
+            for (i = 0; i < 4; i++) begin
+                for (j = 0; j < 4; j++) begin
+                assert_name: assert property (
+                    !(in[i][j] == out[i][j]) && !(in[i][j] == ~[i][j])
+                ) else $error("Error");
+                end
+            end
+            endgenerate
+  example_sva: |
+    property s_box;
+      !(data_o == data_i) && !(data_o == ~data_i);
+    endproperty
+    assert_sbox: assert property (s_box)
+
+- name: ShiftRows
+  description: >
+    ShiftRows: The ShiftRows step processes the state by cyclically shifting the bytes in each row by a specified offset. In the ShiftRows operation in AES, first you need to recognize the input and output of the ShiftRows operation (it can be module or function or task). Then you need to recognize the input and output of them (you need to recognize two relevant variables (input and output of ShiftRows function or operation)).  The input and output of the ShiftRows are both 128 bits.
+  extra: |
+    • For ShiftRows operation in AES design you should note:   
+            In the ShiftRows operation in AES, first you need to recognize the input and output of the ShiftRows operation (it can be module or function or task).
+            Then you need to recognize the input and output of them (you need to recognize two relevant variables (input and output of ShiftRows function or operation)).  The input and output of the ShiftRows are both 128 bits.   
+            Then break down the input and output signals regarding the following pattern. You also need to check all following conditions:
+            Besides, you need to replace the recognized signals relevant to output and input with output_data and input_data signals given in the following template.
+             (
+             output_data[127:120] == input_data[127:120] &&
+             output_data[ 95: 88] == input_data[ 95: 88] &&
+             output_data[ 63: 56] == input_data[ 63: 56] &&
+             output_data[ 31: 24] == input_data[ 31: 24]  &&
+         
+             output_data[119:112] == input_data[ 87: 80] &&
+             output_data[ 87: 80] == input_data[ 55: 48] &&
+             output_data[ 55: 48] == input_data[ 23: 16] &&
+             output_data[ 23: 16] == input_data[119:112] &&
+         
+             output_data[111:104] == input_data[ 47: 40] &&
+             output_data[ 79: 72] == input_data[ 15:  8] &&
+             output_data[ 47: 40] == input_data[111:104] &&
+             output_data[ 15:  8] == input_data[ 79: 72] &&  
+         
+             output_data[103: 96] == input_data[  7:  0] &&
+             output_data[ 71: 64] == input_data[103: 96] &&
+             output_data[ 39: 32] == input_data[ 71: 64] &&
+             output_data[  7:  0] == input_data[ 39: 32]
+             );
+  example_sva: |
+      wire [7:0] w0b0 = dataIn[7:0];
+      wire [7:0] w0b1 = dataIn[15:8];
+      wire [7:0] w0b2 = dataIn[23:16];
+      wire [7:0] w0b3 = dataIn[31:24];
+      wire [7:0] w1b0 = dataIn[39:32];
+      wire [7:0] w1b1 = dataIn[47:40];
+      wire [7:0] w1b2 = dataIn[55:48];
+      wire [7:0] w1b3 = dataIn[63:56];
+      wire [7:0] w2b0 = dataIn[71:64];
+      wire [7:0] w2b1 = dataIn[79:72];
+      wire [7:0] w2b2 = dataIn[87:80];
+      wire [7:0] w2b3 = dataIn[95:88];
+      wire [7:0] w3b0 = dataIn[103:96];
+      wire [7:0] w3b1 = dataIn[111:104];
+      wire [7:0] w3b2 = dataIn[119:112];
+      wire [7:0] w3b3 = dataIn[127:120];
+      property shiftrows_check;
+      //@(posedge iClk) disable iff (!iRstN)
+        (
+          // row0 (no shift)
+          dataOut[127:120] == w3b3 &&
+          dataOut[119:112]   == w2b2 &&
+          dataOut[111:104]   == w1b1 &&
+          dataOut[103:96]   == w0b0 &&
+          // row1 (cyclic left shift by 1 byte)
+          dataOut[95:88] == w2b3 &&
+          dataOut[87:80]   == w1b2 &&
+          dataOut[79:72]   == w0b1 &&
+          dataOut[71:64]   == w3b0 &&
+          // row2 (cyclic left shift by 2 bytes)
+          dataOut[63:56] == w1b3 &&
+          dataOut[55:48]   == w0b2 &&
+          dataOut[47:40]   == w3b1 &&
+          dataOut[39:32]    == w2b0 &&
+          // row3 (cyclic left shift by 3 bytes)
+          dataOut[31:24]  == w0b3 &&
+          dataOut[23:16]   == w3b2 &&
+          dataOut[15:8]   == w2b1 &&
+          dataOut[7:0]     == w1b0
+        );
+      endproperty
+      shiftrows_check_inst: assert property (shiftrows_check)
+      else $error("ShiftRows operation failed.");
+
+
